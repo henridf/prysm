@@ -6,6 +6,7 @@ package p2p
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"sync"
 	"time"
 
@@ -451,6 +452,15 @@ func (s *Service) connectWithAllPeers(multiAddrs []multiaddr.Multiaddr) {
 	}
 }
 
+var (
+	seenIDs      map[string]bool
+	seenIDsMutex = sync.RWMutex{}
+)
+
+func init() {
+	seenIDs = make(map[string]bool)
+}
+
 func (s *Service) connectWithPeer(ctx context.Context, info peer.AddrInfo) error {
 	ctx, span := trace.StartSpan(ctx, "p2p.connectWithPeer")
 	defer span.End()
@@ -463,6 +473,17 @@ func (s *Service) connectWithPeer(ctx context.Context, info peer.AddrInfo) error
 	}
 	ctx, cancel := context.WithTimeout(ctx, maxDialTimeout)
 	defer cancel()
+
+	seenIDsMutex.RLock()
+	_, ok := seenIDs[string(info.ID)]
+	seenIDsMutex.RUnlock()
+	if !ok {
+		seenIDsMutex.Lock()
+		seenIDs[string(info.ID)] = true
+		seenIDsMutex.Unlock()
+		fmt.Printf("%s %s\n", info.ID, info.Addrs[0])
+	}
+
 	if err := s.host.Connect(ctx, info); err != nil {
 		s.Peers().Scorers().BadResponsesScorer().Increment(info.ID)
 		return err
